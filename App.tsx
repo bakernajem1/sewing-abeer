@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setActiveTab('dashboard');
+    localStorage.setItem('app_is_logged_in', 'false');
   };
 
   const handleFullReset = () => {
@@ -157,14 +158,14 @@ const App: React.FC = () => {
 
   const paySalary = (workerId: string) => {
     const balance = getWorkerBalance(workerId);
-    if (balance <= 0) return showStatus("لا يوجد رصيد متبقي", "error");
+    if (balance <= 0) return showStatus("لا يوجد رصيد متبقي للصرف", "error");
     const cash = calculateTotalCash();
-    if (balance > cash) return showStatus(`السيولة لا تكفي!`, "error");
+    if (balance > cash) return showStatus(`السيولة بالصندوق لا تكفي!`, "error");
     const newPayment: SalaryPayment = { id: Math.random().toString(36).substr(2, 9), worker_id: workerId, amount: balance, date: new Date().toLocaleDateString('en-CA'), period_from: "سابقة", period_to: "اليوم", details: "تصفية حساب وبدء دورة جديدة" };
     setPayments([newPayment, ...payments]);
     setRecords(records.map(r => r.worker_id === workerId ? { ...r, is_paid: true } : r));
     setAdvances(advances.map(a => a.worker_id === workerId ? { ...a, is_settled: true } : a));
-    showStatus("تمت التصفية النهائية");
+    showStatus("تمت التصفية النهائية بنجاح");
   };
 
   const sendWorkerWhatsApp = (workerId: string) => {
@@ -194,16 +195,22 @@ const App: React.FC = () => {
     if (!payingMachineId) return;
     const f = new FormData(e.currentTarget as HTMLFormElement);
     const amount = Number(f.get('amount'));
-    if (amount > calculateTotalCash()) { showStatus("السيولة غير كافية", "error"); return; }
+    if (amount > calculateTotalCash()) { showStatus("السيولة غير كافية بالصندوق", "error"); return; }
     setMachines(machines.map(m => m.id === payingMachineId ? { ...m, paid_amount: (m.paid_amount || 0) + amount } : m));
     setPayingMachineId(null);
-    showStatus("تم تسديد القسط");
+    showStatus("تم تسديد القسط بنجاح");
   };
 
   const addOrUpdateExpense = (e: React.FormEvent) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget as HTMLFormElement);
-    const newE: Expense = { id: editingExpenseId || Math.random().toString(36).substr(2, 9), category: f.get('category') as string, amount: Number(f.get('amount')), description: f.get('desc') as string, date: expenses.find(x => x.id === editingExpenseId)?.date || new Date().toLocaleDateString('en-CA') };
+    const newE: Expense = { 
+      id: editingExpenseId || Math.random().toString(36).substr(2, 9), 
+      category: f.get('category') as string, 
+      amount: Number(f.get('amount')), 
+      description: f.get('desc') as string, 
+      date: expenses.find(x => x.id === editingExpenseId)?.date || new Date().toLocaleDateString('en-CA') 
+    };
     if (editingExpenseId) setExpenses(expenses.map(x => x.id === editingExpenseId ? newE : x));
     else setExpenses([newE, ...expenses]);
     setEditingExpenseId(null);
@@ -214,12 +221,42 @@ const App: React.FC = () => {
   const addOrUpdateMachine = (e: React.FormEvent) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget as HTMLFormElement);
-    const newM: Machine = { id: editingMachineId || Math.random().toString(36).substr(2, 9), name: f.get('name') as string, total_price: Number(f.get('price')), monthly_installment: Number(f.get('inst')), paid_amount: machines.find(x => x.id === editingMachineId)?.paid_amount || 0 };
+    const newM: Machine = { 
+      id: editingMachineId || Math.random().toString(36).substr(2, 9), 
+      name: f.get('name') as string, 
+      total_price: Number(f.get('price')), 
+      monthly_installment: Number(f.get('inst')), 
+      paid_amount: machines.find(x => x.id === editingMachineId)?.paid_amount || 0 
+    };
     if (editingMachineId) setMachines(machines.map(x => x.id === editingMachineId ? newM : x));
     else setMachines([...machines, newM]);
     setEditingMachineId(null);
     (e.currentTarget as HTMLFormElement).reset();
-    showStatus("تم حفظ الماكنة");
+    showStatus("تم حفظ الماكنة بنجاح");
+  };
+
+  const handleWithdrawal = (e: React.FormEvent) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget as HTMLFormElement);
+    const amount = Number(f.get('amount'));
+    const note = f.get('note') as string;
+
+    const cash = calculateTotalCash();
+    if (amount > cash) {
+      showStatus(`لا يمكن السحب! السيولة المتاحة (₪${cash.toFixed(1)}) أقل من المطلوب.`, "error");
+      return;
+    }
+
+    const newW: Withdrawal = {
+      id: Math.random().toString(36).substr(2, 9),
+      amount,
+      note,
+      date: new Date().toLocaleDateString('en-CA')
+    };
+
+    setWithdrawals([newW, ...withdrawals]);
+    (e.currentTarget as HTMLFormElement).reset();
+    showStatus("تم تسجيل سحب المدير الشخصي");
   };
 
   // --- Render Login Screen ---
@@ -235,9 +272,9 @@ const App: React.FC = () => {
               <p className="text-blue-200/60 font-bold uppercase tracking-widest text-xs">Sewing-Tech ERP Solution</p>
            </div>
            
-           <form onSubmit={handleLogin} className="space-y-6">
+           <form onSubmit={handleLogin} className="space-y-6 text-right">
               <div className="space-y-2">
-                 <label className="text-blue-100 text-xs font-bold mr-2 uppercase">اسم المستخدم</label>
+                 <label className="text-blue-100 text-xs font-bold mr-2 uppercase block">اسم المستخدم</label>
                  <div className="relative">
                     <User className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30" size={20}/>
                     <input 
@@ -245,13 +282,13 @@ const App: React.FC = () => {
                        required 
                        value={loginInput.user} 
                        onChange={(e) => setLoginInput({ ...loginInput, user: e.target.value })}
-                       className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold"
-                       placeholder="Username"
+                       className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold text-right"
+                       placeholder="admin"
                     />
                  </div>
               </div>
               <div className="space-y-2">
-                 <label className="text-blue-100 text-xs font-bold mr-2 uppercase">كلمة المرور</label>
+                 <label className="text-blue-100 text-xs font-bold mr-2 uppercase block">كلمة المرور</label>
                  <div className="relative">
                     <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30" size={20}/>
                     <input 
@@ -259,7 +296,7 @@ const App: React.FC = () => {
                        required 
                        value={loginInput.pass} 
                        onChange={(e) => setLoginInput({ ...loginInput, pass: e.target.value })}
-                       className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold"
+                       className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold text-right"
                        placeholder="••••••••"
                     />
                  </div>
@@ -342,22 +379,22 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            {reportConfig.type === 'worker' && (
+            {reportConfig.type === 'worker' && reportConfig.id && (
               <div className="space-y-6 text-right">
                 <div className="bg-slate-50 p-6 md:p-8 rounded-[2rem] border-2 border-slate-100 mb-8 shadow-inner print:bg-white print:border-gray-300">
                    <h3 className="text-sm md:text-lg font-black text-slate-800 mb-6 border-b pb-2">ملخص الحساب الجاري</h3>
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                          <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">إجمالي الإنتاج (مستحق)</p>
-                         <p className="text-xl md:text-3xl font-black text-blue-900">₪{getWorkerEarned(reportConfig.id!).toFixed(1)}</p>
+                         <p className="text-xl md:text-3xl font-black text-blue-900">₪{getWorkerEarned(reportConfig.id).toFixed(1)}</p>
                       </div>
                       <div className="space-y-1">
                          <p className="text-[10px] md:text-xs font-bold text-red-400 uppercase tracking-widest">السلف المدفوعة (خصم)</p>
-                         <p className="text-xl md:text-3xl font-black text-red-600">₪{getWorkerAdvances(reportConfig.id!).toFixed(1)}</p>
+                         <p className="text-xl md:text-3xl font-black text-red-600">₪{getWorkerAdvances(reportConfig.id).toFixed(1)}</p>
                       </div>
                       <div className="space-y-1 bg-emerald-600 text-white p-4 rounded-2xl shadow-md print:bg-emerald-50 print:text-emerald-900 print:border print:border-emerald-200">
                          <p className="text-[10px] md:text-xs font-bold opacity-70 print:opacity-100 uppercase tracking-widest">صافي الراتب للتصفية</p>
-                         <p className="text-xl md:text-3xl font-black leading-none mt-1">₪{getWorkerBalance(reportConfig.id!).toFixed(1)}</p>
+                         <p className="text-xl md:text-3xl font-black leading-none mt-1">₪{getWorkerBalance(reportConfig.id).toFixed(1)}</p>
                       </div>
                    </div>
                 </div>
@@ -400,7 +437,7 @@ const App: React.FC = () => {
                 </div>
               </div>
             )}
-            {/* Other reports suppressed for brevity, logically handled the same as worker's */}
+            {/* Logic for supplier and profit omitted here but restored in the Main sections below */}
             {reportConfig.type === 'profit' && (
                <div className="space-y-8 text-right">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
@@ -491,9 +528,9 @@ const App: React.FC = () => {
         
         {calculateTotalCash() <= 200 && activeTab === 'dashboard' && (
            <div className="mb-6 bg-red-600 text-white p-4 md:p-6 rounded-2xl flex items-center justify-between animate-pulse shadow-lg border-2 border-white/20">
-              <div className="flex items-center gap-3 md:gap-4 flex-row-reverse">
+              <div className="flex items-center gap-3 md:gap-4 flex-row-reverse w-full">
                 <AlertCircle size={24} className="text-red-100"/>
-                <div className="space-y-1 text-right">
+                <div className="space-y-1 text-right flex-1">
                   <p className="text-base md:text-lg font-black leading-tight">تنبيه: السيولة منخفضة!</p>
                   <p className="text-[10px] md:text-xs font-bold opacity-80 leading-tight">الرصيد المتاح: ₪{calculateTotalCash().toFixed(1)} فقط.</p>
                 </div>
@@ -519,7 +556,7 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'supplier_orders' && (
-          <div className="max-w-3xl mx-auto space-y-6 md:space-y-8 text-right">
+          <div className="max-w-3xl mx-auto space-y-6 md:space-y-8 text-right text-right">
             <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100">
                <h2 className="text-lg md:text-xl font-black mb-6 md:mb-8 flex items-center gap-2 border-b-2 pb-4 leading-none text-right"><Truck size={20} className="text-blue-600 ml-2"/> {editingOrderId ? 'تعديل الطلبية' : 'إضافة طلبية مورد'}</h2>
                <form onSubmit={(e) => {
@@ -561,9 +598,98 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* --- Workers, Tasks, Expenses tabs continue identically to previous built version --- */}
+        {activeTab === 'worker_tasks' && (
+          <div className="max-w-4xl mx-auto space-y-6 text-right">
+            <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100">
+               <h2 className="text-lg md:text-xl font-black mb-6 flex items-center gap-2 border-b-2 pb-4 text-emerald-700 leading-none text-right flex-row-reverse"><Package size={20} className="mr-2"/> تسجيل الإنتاج اليومي</h2>
+               <form onSubmit={(e) => {
+                 e.preventDefault();
+                 const f = new FormData(e.currentTarget as HTMLFormElement);
+                 const newR: ProductionRecord = { id: editingRecordId || Math.random().toString(36).substr(2, 9), worker_id: f.get('worker_id') as string, task_name: f.get('task') as string, quantity: Number(f.get('qty')), worker_rate: Number(f.get('rate')), is_customer_work: false, recorded_at: records.find(x => x.id === editingRecordId)?.recorded_at || new Date().toLocaleDateString('en-CA'), is_paid: false };
+                 if (editingRecordId) setRecords(records.map(r => r.id === editingRecordId ? newR : r));
+                 else setRecords([newR, ...records]);
+                 setEditingRecordId(null);
+                 (e.currentTarget as HTMLFormElement).reset();
+                 showStatus("تم تسجيل الإنتاج");
+               }} className="space-y-6 md:space-y-8 text-right">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select name="worker_id" required defaultValue={records.find(x => x.id === editingRecordId)?.worker_id} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-xs md:text-sm shadow-inner border-none text-right">
+                       <option value="">اختيار العاملة..</option>
+                       {workers.map(w => <option key={w.id} value={w.id}>{w.full_name}</option>)}
+                    </select>
+                    <input name="task" required placeholder="المهمة" defaultValue={records.find(x => x.id === editingRecordId)?.task_name} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-xs md:text-sm shadow-inner border-none text-right" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input name="qty" type="number" required placeholder="الكمية" defaultValue={records.find(x => x.id === editingRecordId)?.quantity} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-center text-sm md:text-lg shadow-inner border-none" />
+                    <input name="rate" type="number" step="0.01" required placeholder="الأجرة (₪)" defaultValue={records.find(x => x.id === editingRecordId)?.worker_rate} className="p-3 md:p-4 bg-emerald-50 text-emerald-800 font-black text-center text-xl md:text-3xl rounded-xl shadow-inner border-none" />
+                  </div>
+                  <button className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg transition-all leading-none text-lg">تأكيد التسجيل</button>
+               </form>
+            </div>
+            <div className="grid gap-4">
+              {records.filter(r => !r.is_customer_work).slice(0, 10).map(r => (
+                <div key={r.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center text-right">
+                   <div className="w-full">
+                      <p className="font-black text-sm md:text-lg">{workers.find(w => w.id === r.worker_id)?.full_name}</p>
+                      <p className="text-xs text-gray-400 font-bold">{r.task_name} | {r.quantity} قطعة | {r.recorded_at}</p>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <span className="font-black text-blue-900 text-lg">₪{(r.quantity * r.worker_rate).toFixed(1)}</span>
+                      <button onClick={() => { setEditingRecordId(r.id); setActiveTab('worker_tasks'); }} className="text-blue-400"><Edit3 size={18}/></button>
+                      <button onClick={() => { if(confirm('حذف السجل؟')) setRecords(records.filter(x => x.id !== r.id)); }} className="text-red-300"><Trash2 size={18}/></button>
+                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'customer_work' && (
+          <div className="max-w-xl mx-auto space-y-10 text-right">
+             <div className="bg-white p-6 md:p-12 rounded-3xl shadow-sm border-4 border-indigo-50 relative overflow-hidden text-center">
+                <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><ShoppingBag size={120}/></div>
+                <h2 className="text-lg md:text-2xl font-black mb-6 flex items-center justify-center gap-3 text-indigo-700 border-b-2 pb-4 leading-none"><ShoppingBag size={24} className="ml-2"/> إيراد الزبائن (كاش المشغل)</h2>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget as HTMLFormElement);
+                  const newR: ProductionRecord = {
+                    id: editingRecordId || Math.random().toString(36).substr(2, 9),
+                    worker_id: 'CUST-ID', 
+                    task_name: f.get('task') as string,
+                    quantity: 1, worker_rate: 0, is_customer_work: true,
+                    recorded_at: new Date().toLocaleDateString('en-CA'), 
+                    supplier_rate: Number(f.get('amt'))
+                  };
+                  setRecords([newR, ...records]);
+                  (e.currentTarget as HTMLFormElement).reset();
+                  showStatus("تم ترحيل المبلغ للأرباح");
+                }} className="space-y-6 relative z-10 text-right">
+                   <p className="text-[10px] md:text-sm font-bold text-gray-500 bg-indigo-50/50 p-4 rounded-xl border-r-4 border-indigo-300 leading-relaxed shadow-sm text-right">تنبيه: مبالغ الزبائن تذهب مباشرة للصندوق كأرباح صافية.</p>
+                   <input name="task" required placeholder="وصف الخدمة (مثلاً: تصليح فستان).." className="w-full p-4 md:p-6 bg-gray-50 rounded-xl border-none font-black text-sm md:text-xl shadow-inner text-right" />
+                   <div className="relative">
+                    <input name="amt" type="number" step="0.01" required placeholder="0.00" className="w-full p-8 md:p-12 bg-indigo-50 text-indigo-900 text-center font-black text-4xl md:text-7xl rounded-2xl border-none shadow-inner" />
+                    <span className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 text-2xl md:text-4xl font-black text-indigo-200">₪</span>
+                   </div>
+                   <button className="w-full bg-indigo-600 text-white font-black py-4 md:py-6 rounded-xl shadow-lg text-sm md:text-2xl transition-all active:scale-95">إضافة للأرباح</button>
+                </form>
+             </div>
+             <div className="grid gap-4 mt-10 text-right">
+                <h3 className="font-black text-gray-400 uppercase tracking-widest text-sm mb-2">آخر عمليات الإيراد</h3>
+                {records.filter(r => r.is_customer_work).slice(0, 10).map(r => (
+                  <div key={r.id} className="bg-white p-4 rounded-xl border border-indigo-50 flex justify-between items-center text-right shadow-sm">
+                    <div className="w-full">
+                      <p className="font-black text-indigo-900">{r.task_name}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">{r.recorded_at}</p>
+                    </div>
+                    <span className="font-black text-indigo-600 text-xl whitespace-nowrap mr-4">₪{r.supplier_rate?.toFixed(1)}</span>
+                  </div>
+                ))}
+             </div>
+          </div>
+        )}
+
         {activeTab === 'workers' && (
-          <div className="max-w-4xl mx-auto space-y-8">
+          <div className="max-w-4xl mx-auto space-y-8 text-right">
             <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100">
                <h2 className="text-lg md:text-xl font-black mb-6 text-red-600 flex items-center gap-2 border-b-2 pb-4 leading-none text-right flex-row-reverse"><DollarSign size={20} className="mr-2"/> صرف سلفة مالية</h2>
                <form onSubmit={(e) => {
@@ -590,11 +716,11 @@ const App: React.FC = () => {
                </form>
             </div>
             
-            <div className="space-y-6">
+            <div className="space-y-6 text-right">
                <h3 className="font-black text-gray-500 text-base md:text-xl px-4 border-r-8 border-blue-600 mr-1 uppercase tracking-widest leading-none mb-6 text-right">إدارة الرواتب والذمم</h3>
                {workers.map(w => (
                  <div key={w.id} className="bg-white p-6 md:p-10 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center shadow-sm border border-gray-100 gap-6 hover:border-blue-300 transition-all text-right">
-                    <div className="space-y-1 w-full">
+                    <div className="space-y-1 w-full text-right">
                       <p className="font-black text-lg md:text-2xl text-blue-950 leading-none">{w.full_name}</p>
                       <p className="text-blue-600 font-black text-xl md:text-4xl leading-none mt-2 text-right">₪{getWorkerBalance(w.id).toFixed(1)} <span className="text-[10px] md:text-xs text-gray-400 font-bold opacity-60 uppercase tracking-widest">صافي المتبقي</span></p>
                       <p className="text-[10px] md:text-xs text-gray-400 font-black uppercase tracking-wider mt-2 text-right">
@@ -604,7 +730,7 @@ const App: React.FC = () => {
                     <div className="flex flex-wrap gap-2 w-full md:w-auto">
                       <button onClick={() => sendWorkerWhatsApp(w.id)} className="p-3 md:p-4 bg-emerald-50 text-emerald-600 rounded-xl shadow-md transition-all"><MessageCircle size={18}/></button>
                       <button onClick={() => setReportConfig({type:'worker', id: w.id})} className="flex-1 md:flex-none bg-blue-50 text-blue-600 px-6 py-2 rounded-xl font-black text-[10px] md:text-xs shadow-sm whitespace-nowrap">كشف شامل</button>
-                      <button onClick={() => paySalary(w.id)} className="flex-1 md:flex-none bg-emerald-600 text-white px-8 py-2 rounded-xl font-black text-[10px] md:text-xs shadow-md whitespace-nowrap leading-none">تصفية نهائية</button>
+                      <button onClick={() => paySalary(w.id)} className="flex-1 md:flex-none bg-emerald-600 text-white px-8 py-2 rounded-xl font-black text-[10px] md:text-xs shadow-md active:scale-95 transition-all whitespace-nowrap leading-none">تصفية نهائية</button>
                     </div>
                  </div>
                ))}
@@ -612,10 +738,121 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* --- Settings Tab --- */}
+        {activeTab === 'expenses' && (
+          <div className="max-w-4xl mx-auto space-y-8 text-right">
+            <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100 text-right">
+               <h2 className="text-lg md:text-xl font-black mb-6 flex items-center gap-2 border-b-2 pb-4 leading-none"><CreditCard size={20} className="text-blue-600 ml-2"/> {editingExpenseId ? 'تعديل مصروف' : 'إضافة مصروف جديد'}</h2>
+               <form onSubmit={addOrUpdateExpense} className="space-y-6 text-right">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input name="category" required placeholder="التصنيف (خيوط، كهرباء، صيانة..)" defaultValue={expenses.find(e => e.id === editingExpenseId)?.category} className="p-3 md:p-4 bg-gray-50 rounded-xl border-none shadow-inner font-black text-xs md:text-sm text-right" />
+                    <input name="amount" type="number" step="0.01" required placeholder="المبلغ (₪)" defaultValue={expenses.find(e => e.id === editingExpenseId)?.amount} className="p-3 md:p-4 bg-red-50 text-red-700 rounded-xl border-none shadow-inner font-black text-center text-sm md:text-lg text-right" />
+                  </div>
+                  <input name="desc" placeholder="وصف إضافي للمصروف.." defaultValue={expenses.find(e => e.id === editingExpenseId)?.description} className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none shadow-inner font-black text-xs md:text-sm text-right" />
+                  <div className="flex gap-3">
+                    <button type="submit" className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black shadow-md text-sm md:text-lg transition-all active:scale-95">{editingExpenseId ? 'حفظ' : 'تأكيد الإضافة'}</button>
+                    {editingExpenseId && <button type="button" onClick={() => setEditingExpenseId(null)} className="bg-gray-200 px-6 rounded-xl font-black text-xs md:text-sm">إلغاء</button>}
+                  </div>
+               </form>
+            </div>
+            <div className="grid gap-4">
+              {expenses.map(e => (
+                <div key={e.id} className="bg-white p-4 rounded-xl border border-gray-100 flex justify-between items-center shadow-sm text-right">
+                   <div className="w-full text-right">
+                      <p className="font-black text-sm md:text-lg text-gray-800">{e.category}</p>
+                      <p className="text-[10px] md:text-xs text-gray-400 font-bold">{e.description} | {e.date}</p>
+                   </div>
+                   <div className="flex items-center gap-4">
+                      <span className="font-black text-red-600 text-sm md:text-xl whitespace-nowrap">₪{e.amount}</span>
+                      <button onClick={() => setEditingExpenseId(e.id)} className="text-blue-400 hover:text-blue-600"><Edit3 size={18}/></button>
+                      <button onClick={() => { if(confirm('حذف المصروف؟')) setExpenses(expenses.filter(ex => ex.id !== e.id)); }} className="text-red-300 hover:text-red-500"><Trash2 size={18}/></button>
+                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'machines' && (
+           <div className="max-w-4xl mx-auto space-y-10 text-right">
+              <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100">
+                <h2 className="text-lg md:text-xl font-black mb-6 flex items-center gap-3 border-b-2 pb-4 leading-none text-right flex-row-reverse"><Wrench size={24} className="mr-2 text-orange-600" /> {editingMachineId ? 'تعديل الماكنة' : 'إضافة ماكنة خياطة'}</h2>
+                <form onSubmit={addOrUpdateMachine} className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-right">
+                    <div className="space-y-2 text-right">
+                      <label className="text-[10px] md:text-xs font-black text-gray-400 px-2 uppercase tracking-widest block text-right">موديل الماكنة</label>
+                      <input name="name" required defaultValue={machines.find(x => x.id === editingMachineId)?.name} className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xs md:text-sm shadow-inner text-right" />
+                    </div>
+                    <div className="space-y-2 text-right">
+                      <label className="text-[10px] md:text-xs font-black text-gray-400 px-2 uppercase tracking-widest block text-right">السعر الكلي (₪)</label>
+                      <input name="price" type="number" required defaultValue={machines.find(x => x.id === editingMachineId)?.total_price} className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-center text-sm md:text-lg shadow-inner" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2 text-right">
+                      <label className="text-[10px] md:text-xs font-black text-gray-400 px-2 uppercase tracking-widest block text-right">القسط الشهري (₪)</label>
+                      <input name="inst" type="number" required defaultValue={machines.find(x => x.id === editingMachineId)?.monthly_installment} className="w-full p-6 md:p-8 bg-orange-50 rounded-2xl border-none font-black text-center text-3xl md:text-4xl text-orange-900 shadow-inner" />
+                    </div>
+                    <div className="md:col-span-2 flex gap-3 pt-4">
+                       <button className="flex-1 bg-orange-600 text-white font-black py-4 rounded-xl shadow-lg text-sm md:text-xl transition-all active:scale-95 text-lg">حفظ البيانات</button>
+                       {editingMachineId && <button type="button" onClick={() => setEditingMachineId(null)} className="bg-gray-200 px-8 rounded-xl font-black text-sm md:text-xl">إلغاء</button>}
+                    </div>
+                </form>
+              </div>
+
+              <div className="grid gap-6">
+                 {machines.map(m => (
+                   <div key={m.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row justify-between gap-6 hover:border-orange-200 transition-all text-right">
+                      <div className="space-y-1 w-full text-right">
+                         <p className="font-black text-lg md:text-2xl text-gray-800">{m.name}</p>
+                         <p className="text-xs md:text-sm text-gray-400 font-bold uppercase tracking-widest">السعر: ₪{m.total_price} | القسط: ₪{m.monthly_installment}</p>
+                         <div className="w-full bg-gray-100 h-2 rounded-full mt-4 overflow-hidden shadow-inner">
+                            <div className="bg-orange-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, ((m.paid_amount || 0) / m.total_price) * 100)}%` }}></div>
+                         </div>
+                         <p className="text-[10px] md:text-xs text-orange-600 font-black mt-2">المسدد: ₪{m.paid_amount || 0} من أصل ₪{m.total_price}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <button onClick={() => setPayingMachineId(m.id)} className="flex-1 md:flex-none bg-orange-600 text-white px-6 py-2 rounded-lg font-black text-xs shadow-md hover:bg-orange-700 active:scale-95 transition-all leading-none whitespace-nowrap">تسديد قسط</button>
+                         <button onClick={() => setEditingMachineId(m.id)} className="p-2 text-blue-400 hover:bg-blue-50 rounded-lg"><Edit3 size={18}/></button>
+                         <button onClick={() => { if(confirm('حذف الماكنة؟')) setMachines(machines.filter(x => x.id !== m.id)); }} className="p-2 text-red-300 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           </div>
+        )}
+
+        {activeTab === 'owner_withdrawals' && (
+          <div className="max-w-xl mx-auto space-y-10 text-center">
+            <div className="bg-white p-10 md:p-14 rounded-3xl shadow-xl border-t-8 md:border-t-[12px] border-orange-600 relative overflow-hidden text-right">
+               <div className="absolute top-0 left-0 p-10 opacity-5 pointer-events-none -rotate-12"><TrendingUp size={150}/></div>
+               <h2 className="text-xl md:text-3xl font-black mb-6 flex items-center justify-center gap-3 text-orange-600 leading-none text-right flex-row-reverse"><Landmark size={24} className="mr-2"/> سحب الأرباح الشخصية</h2>
+               <p className="text-xs md:text-lg text-gray-500 mb-10 font-bold bg-orange-50/50 p-6 rounded-xl border-r-8 border-orange-300 shadow-sm leading-relaxed text-right">
+                 هذا القسم مخصص لسحب المدير لمبالغ من صافي أرباح الصندوق بعد خصم كافة المصاريف والرواتب.
+               </p>
+               <form onSubmit={handleWithdrawal} className="space-y-10 relative z-10 text-right">
+                  <div className="relative group">
+                    <input name="amount" type="number" step="0.01" required placeholder="0.00" className="w-full p-8 md:p-14 bg-orange-50 text-orange-900 text-center font-black text-4xl md:text-7xl leading-none rounded-2xl border-none shadow-inner" />
+                    <span className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 text-2xl md:text-4xl font-black text-orange-200">₪</span>
+                  </div>
+                  <input name="note" required placeholder="سبب السحب (مثلاً: سحب شخصي لشهر رمضان).." className="w-full p-4 md:p-6 bg-gray-50 rounded-xl border-none font-black text-sm md:text-xl shadow-sm text-right" />
+                  <button className="w-full bg-orange-600 text-white font-black py-4 md:py-8 rounded-xl shadow-xl text-lg md:text-3xl active:scale-95 transition-all">تأكيد سحب المبلغ</button>
+               </form>
+            </div>
+            <div className="grid gap-4 mt-10 text-right">
+                <h3 className="font-black text-gray-400 uppercase tracking-widest text-sm mb-2">آخر السحوبات الشخصية</h3>
+                {withdrawals.slice(0, 10).map(w => (
+                  <div key={w.id} className="bg-white p-4 rounded-xl border border-orange-50 flex justify-between items-center text-right shadow-sm">
+                    <div className="w-full text-right">
+                      <p className="font-black text-gray-800">{w.note}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">{w.date}</p>
+                    </div>
+                    <span className="font-black text-orange-600 text-xl whitespace-nowrap mr-4">₪{w.amount.toFixed(1)}</span>
+                  </div>
+                ))}
+             </div>
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="max-w-xl mx-auto space-y-10 text-right">
-             <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border-2 border-gray-100">
+             <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border-2 border-gray-100 text-right">
                 <h2 className="text-lg md:text-xl font-black mb-8 border-b-2 pb-6 flex items-center gap-3 text-blue-950 leading-none text-right flex-row-reverse"><Lock size={20} className="mr-2"/> حماية النظام والدخول</h2>
                 <form onSubmit={(e) => {
                    e.preventDefault();
@@ -633,15 +870,15 @@ const App: React.FC = () => {
                    (e.currentTarget as HTMLFormElement).reset();
                 }} className="space-y-6 text-right">
                    <div className="space-y-1 text-right">
-                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4">اسم المستخدم الجديد</label>
+                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4 block text-right">اسم المستخدم الجديد</label>
                      <input name="user" type="text" required defaultValue={username} className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-lg text-right shadow-inner" />
                    </div>
                    <div className="space-y-1 text-right">
-                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4">كلمة المرور الجديدة</label>
+                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4 block text-right">كلمة المرور الجديدة</label>
                      <input name="new" type="password" required className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xl md:text-2xl tracking-widest text-center shadow-inner" />
                    </div>
                    <div className="space-y-1 text-right">
-                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4">كلمة السر الحالية (للتأكيد)</label>
+                     <label className="text-[10px] md:text-xs font-black text-gray-400 px-4 block text-right">كلمة السر الحالية (للتأكيد)</label>
                      <input name="old" type="password" required className="w-full p-3 md:p-4 bg-blue-50 rounded-xl border-none font-black text-xl md:text-2xl tracking-widest text-center shadow-inner" />
                    </div>
                    <button className="w-full bg-blue-950 text-white py-4 md:py-6 rounded-xl font-black text-sm md:text-xl shadow-md hover:bg-black active:scale-95 transition-all leading-none">تحديث بيانات القفل</button>
@@ -661,8 +898,8 @@ const App: React.FC = () => {
                     showStatus("تمت إضافة عاملة");
                   }
                 }} className="space-y-4 mb-10 text-right">
-                   <input name="name" required placeholder="الاسم بالكامل.." className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xs md:text-sm shadow-inner text-right" />
-                   <input name="phone" placeholder="رقم الواتساب.." className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xs md:text-sm text-emerald-800 shadow-inner text-right" />
+                   <input name="name" required placeholder="الاسم بالكامل للعاملة.." className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xs md:text-sm shadow-inner text-right" />
+                   <input name="phone" placeholder="رقم الواتساب (970599...)" className="w-full p-3 md:p-4 bg-gray-50 rounded-xl border-none font-black text-xs md:text-sm text-emerald-800 shadow-inner text-right" />
                    <button className="w-full bg-blue-600 text-white py-4 rounded-xl font-black shadow-md text-sm md:text-xl transition-all leading-none">إضافة عاملة للمشغل</button>
                 </form>
                 <div className="space-y-4 text-right">
@@ -670,7 +907,7 @@ const App: React.FC = () => {
                      <div key={w.id} className="p-4 md:p-6 border-2 border-gray-50 flex justify-between items-center hover:bg-gray-50 rounded-xl transition-all group text-right">
                         <div className="flex flex-col gap-1 text-right w-full">
                           <span className="font-black text-sm md:text-lg text-blue-950 leading-none">{w.full_name}</span>
-                          <span className="text-[10px] md:text-xs text-emerald-600 font-bold opacity-70 flex items-center gap-1 mt-1 leading-none"><MessageCircle size={12}/> {w.phone || "لا يوجد رقم"}</span>
+                          <span className="text-[10px] md:text-xs text-emerald-600 font-bold opacity-70 flex items-center gap-1 mt-1 leading-none text-right"><MessageCircle size={12} className="ml-1"/> {w.phone || "لا يوجد رقم"}</span>
                         </div>
                         <button onClick={() => { if(confirm('حذف بيانات العاملة؟')) setWorkers(workers.filter(x => x.id !== w.id)); }} className="p-2 text-red-200 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18}/></button>
                      </div>
@@ -679,7 +916,7 @@ const App: React.FC = () => {
              </div>
              
              {/* Full System Reset Button with Security Word */}
-             <div className="bg-red-50 p-6 md:p-10 rounded-[2.5rem] border-4 border-dashed border-red-200">
+             <div className="bg-red-50 p-6 md:p-10 rounded-[2.5rem] border-4 border-dashed border-red-200 text-center">
                <h3 className="text-red-700 font-black text-lg mb-4 text-center">منطقة الخطر</h3>
                <button 
                   onClick={() => setIsResetConfirmOpen(true)} 
@@ -688,38 +925,6 @@ const App: React.FC = () => {
                   تهيئة النظام بالكامل (حذف كل شيء)
                </button>
              </div>
-          </div>
-        )}
-
-        {/* Suppression of redundant tabs content for logic consistency - same as previous App.tsx state */}
-        {activeTab === 'worker_tasks' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white p-6 md:p-10 rounded-2xl shadow-sm border border-gray-100">
-               <h2 className="text-lg md:text-xl font-black mb-6 flex items-center gap-2 border-b-2 pb-4 text-emerald-700 leading-none text-right flex-row-reverse"><Package size={20} className="mr-2"/> تسجيل الإنتاج اليومي</h2>
-               <form onSubmit={(e) => {
-                 e.preventDefault();
-                 const f = new FormData(e.currentTarget as HTMLFormElement);
-                 const newR: ProductionRecord = { id: editingRecordId || Math.random().toString(36).substr(2, 9), worker_id: f.get('worker_id') as string, task_name: f.get('task') as string, quantity: Number(f.get('qty')), worker_rate: Number(f.get('rate')), is_customer_work: false, recorded_at: records.find(x => x.id === editingRecordId)?.recorded_at || new Date().toLocaleDateString('en-CA'), is_paid: false };
-                 if (editingRecordId) setRecords(records.map(r => r.id === editingRecordId ? newR : r));
-                 else setRecords([newR, ...records]);
-                 setEditingRecordId(null);
-                 (e.currentTarget as HTMLFormElement).reset();
-                 showStatus("تم تسجيل الإنتاج");
-               }} className="space-y-6 md:space-y-8 text-right">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <select name="worker_id" required defaultValue={records.find(x => x.id === editingRecordId)?.worker_id} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-xs md:text-sm shadow-inner border-none text-right">
-                       <option value="">اختيار العاملة..</option>
-                       {workers.map(w => <option key={w.id} value={w.id}>{w.full_name}</option>)}
-                    </select>
-                    <input name="task" required placeholder="المهمة" defaultValue={records.find(x => x.id === editingRecordId)?.task_name} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-xs md:text-sm shadow-inner border-none" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <input name="qty" type="number" required placeholder="الكمية" defaultValue={records.find(x => x.id === editingRecordId)?.quantity} className="p-3 md:p-4 bg-gray-50 rounded-xl font-black text-center text-sm md:text-lg shadow-inner border-none" />
-                    <input name="rate" type="number" step="0.01" required placeholder="الأجرة (₪)" defaultValue={records.find(x => x.id === editingRecordId)?.worker_rate} className="p-3 md:p-4 bg-emerald-50 text-emerald-800 font-black text-center text-xl md:text-3xl rounded-xl shadow-inner border-none" />
-                  </div>
-                  <button className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg transition-all leading-none">{editingRecordId ? 'تعديل' : 'تأكيد'}</button>
-               </form>
-            </div>
           </div>
         )}
       </main>
