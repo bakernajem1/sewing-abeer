@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [resetPassInput, setResetPassInput] = useState('');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // --- Core State ---
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -50,22 +51,18 @@ const App: React.FC = () => {
   const [reportConfig, setReportConfig] = useState<{ type: 'worker' | 'supplier' | 'profit', id?: string } | null>(null);
   const [partialPaymentOrderId, setPartialPaymentOrderId] = useState<string | null>(null);
 
-  // --- Data Fetching Logic ---
+  // --- Data Fetching Logic (Enhanced for Reliability) ---
   const fetchAllData = useCallback(async () => {
     setIsInitialLoading(true);
+    setDbError(null);
     try {
-      const [
-        { data: workersData },
-        { data: ordersData },
-        { data: supPayData },
-        { data: recordsData },
-        { data: advancesData },
-        { data: expensesData },
-        { data: machinesData },
-        { data: paymentsData },
-        { data: withdrawalsData },
-        { data: configData }
-      ] = await Promise.all([
+      // Check for valid config before attempting anything
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Supabase configuration is missing");
+      }
+
+      // Fetch data using individual calls to prevent one table failure from breaking everything
+      const results = await Promise.allSettled([
         supabase.from('workers').select('*'),
         supabase.from('supplier_orders').select('*'),
         supabase.from('supplier_payments').select('*'),
@@ -75,31 +72,34 @@ const App: React.FC = () => {
         supabase.from('machines').select('*'),
         supabase.from('salary_payments').select('*'),
         supabase.from('withdrawals').select('*'),
-        supabase.from('app_config').select('*').single()
+        supabase.from('app_config').select('*').maybeSingle()
       ]);
 
-      if (workersData) setWorkers(workersData);
-      if (ordersData) setOrders(ordersData);
-      if (supPayData) setSupplierPayments(supPayData);
-      if (recordsData) setRecords(recordsData);
-      if (advancesData) setAdvances(advancesData);
-      if (expensesData) setExpenses(expensesData);
-      if (machinesData) setMachines(machinesData);
-      if (paymentsData) setPayments(paymentsData);
-      if (withdrawalsData) setWithdrawals(withdrawalsData);
+      // Assign values based on successful results
+      if (results[0].status === 'fulfilled' && results[0].value.data) setWorkers(results[0].value.data);
+      if (results[1].status === 'fulfilled' && results[1].value.data) setOrders(results[1].value.data);
+      if (results[2].status === 'fulfilled' && results[2].value.data) setSupplierPayments(results[2].value.data);
+      if (results[3].status === 'fulfilled' && results[3].value.data) setRecords(results[3].value.data);
+      if (results[4].status === 'fulfilled' && results[4].value.data) setAdvances(results[4].value.data);
+      if (results[5].status === 'fulfilled' && results[5].value.data) setExpenses(results[5].value.data);
+      if (results[6].status === 'fulfilled' && results[6].value.data) setMachines(results[6].value.data);
+      if (results[7].status === 'fulfilled' && results[7].value.data) setPayments(results[7].value.data);
+      if (results[8].status === 'fulfilled' && results[8].value.data) setWithdrawals(results[8].value.data);
       
-      if (configData) {
-        setUsername(configData.username);
-        setPassword(configData.password);
+      // Handle config separately
+      if (results[9].status === 'fulfilled' && results[9].value.data) {
+        setUsername(results[9].value.data.username || 'admin');
+        setPassword(results[9].value.data.password || '1234');
       }
       
-      // Check session
+      // Check session even if some DB calls failed
       const storedLogin = localStorage.getItem('app_is_logged_in') === 'true';
       if (storedLogin) setIsLoggedIn(true);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Supabase load error:", error);
-      showStatus("فشل في تحميل البيانات من الخادم", "error");
+      setDbError(error.message || "فشل الاتصال بقاعدة البيانات");
+      showStatus("خطأ في الاتصال بالسحابة", "error");
     } finally {
       setIsInitialLoading(false);
     }
@@ -364,19 +364,27 @@ const App: React.FC = () => {
     window.open(`https://wa.me/${worker.phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  // --- Initial Loading Screen ---
   if (isInitialLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center font-['Cairo']">
         <Loader2 className="animate-spin text-blue-500 mb-4" size={48} />
         <p className="text-white font-bold animate-pulse">جاري جلب بيانات مشغل عبير من السحابة...</p>
+        <p className="text-white/40 text-[10px] mt-4 uppercase tracking-[0.3em]">Smart Sewing-Tech ERP</p>
       </div>
     );
   }
 
-  // --- Render Login Screen ---
+  // --- Render Login Screen (Always reachable even with partial DB failure) ---
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-black flex items-center justify-center p-4 font-['Cairo']">
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-black flex flex-col items-center justify-center p-4 font-['Cairo'] relative">
+        {dbError && (
+          <div className="absolute top-4 left-4 right-4 bg-red-600/20 border border-red-600/50 p-3 rounded-xl flex items-center gap-3 text-red-200 text-xs font-bold animate-in fade-in slide-in-from-top-4">
+            <AlertCircle size={16}/> {dbError} (سيعمل النظام ببيانات افتراضية)
+          </div>
+        )}
+        
         <div className="w-full max-w-md bg-white/10 backdrop-blur-xl p-8 md:p-12 rounded-[2.5rem] shadow-2xl border border-white/20 animate-in zoom-in-95 duration-500">
            <div className="text-center mb-10">
               <div className="w-20 h-20 bg-white rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-4">
@@ -428,7 +436,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 text-gray-800 pb-20 lg:pb-0 font-['Cairo']">
       
-      {/* Modals restored from original code with Supabase functionality */}
+      {/* Modals */}
       {isResetConfirmOpen && (
         <div className="fixed inset-0 z-[500] bg-blue-950/80 backdrop-blur-md flex items-center justify-center p-4">
            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-md w-full text-center">
@@ -446,10 +454,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Report Modal, Sidebar, and other sections remain exactly as defined in the original file, 
-          but they now utilize the updated 'supabase-linked' state and handlers */}
-      
-      {/* [Omitted for brevity: Detailed Report Modal & Sidebar (Exact same as original code structure)] */}
       {reportConfig && (
         <div className="fixed inset-0 z-[200] bg-white overflow-y-auto p-4 md:p-8 print:block">
           <div className="max-w-4xl mx-auto">
@@ -482,7 +486,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main UI Structure Restored */}
+      {/* Sidebar */}
       <aside className={`fixed inset-y-0 right-0 z-50 w-64 bg-white shadow-2xl transform transition-transform duration-500 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-6 h-full flex flex-col">
           <div className="flex items-center justify-between mb-8 border-b-2 pb-6">
@@ -513,7 +517,6 @@ const App: React.FC = () => {
       </aside>
 
       <main className="lg:mr-64 min-h-screen p-4 md:p-8 lg:p-10 text-right">
-        {/* Dynamic Content Loading based on activeTab (Kept identical UI to original) */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
             <AIInput onDataExtracted={handleAISuccess} />
@@ -573,7 +576,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* [Logic for Settings, Machines, Withdrawals, Expenses, and Orders updated to use async Supabase logic but keeping original UI] */}
         {activeTab === 'settings' && (
           <div className="max-w-xl mx-auto space-y-10">
              <div className="bg-white p-12 rounded-3xl shadow-sm border-2 border-gray-100 text-right">
@@ -601,7 +603,6 @@ const App: React.FC = () => {
                 </form>
              </div>
 
-             {/* Section for Worker Management updated with Supabase */}
              <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 text-right">
                 <h2 className="text-xl font-black mb-6 border-b-2 pb-4 text-right">إضافة عاملة جديدة</h2>
                 <form onSubmit={async (e) => {
@@ -642,12 +643,8 @@ const App: React.FC = () => {
              </div>
           </div>
         )}
-
-        {/* Fallback rendering for sections not detailed here (Machine, Expenses, etc.) follows the same logic: 
-            await supabase, update state, keep UI. */}
       </main>
 
-      {/* Floating Bottom Nav for Mobile */}
       <nav className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-3xl border-t border-gray-100 p-4 flex justify-around items-center lg:hidden z-40 shadow-xl rounded-t-[2rem] print:hidden">
         {[
           { id: 'dashboard', icon: LayoutDashboard },
@@ -662,7 +659,6 @@ const App: React.FC = () => {
         ))}
       </nav>
 
-      {/* Status Messages */}
       {statusMsg && (
         <div className={`fixed top-4 left-4 right-4 z-[300] p-4 rounded-xl shadow-2xl flex items-center gap-3 border-l-8 ${statusMsg.type === 'success' ? 'bg-emerald-600 text-white border-emerald-900' : 'bg-red-600 text-white border-red-900'}`}>
            {statusMsg.type === 'success' ? <CheckCircle2 size={24}/> : <AlertCircle size={24}/>}
